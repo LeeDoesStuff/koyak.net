@@ -7,7 +7,9 @@
     <title>Koyak — Portfolio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" /></noscript>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -49,6 +51,43 @@
             </nav>
           </div>
         </section>
+
+        <section class="retro-viewport" aria-label="Koyak desktop">
+          <div class="retro-screen">
+            <div class="desktop-icons" aria-label="Desktop shortcuts">
+              <button class="desktop-icon" type="button" data-window="about">
+                <span class="pixel-icon pixel-icon--computer" aria-hidden="true"></span>
+                <span>ABOUT ME</span>
+              </button>
+              <button class="desktop-icon" type="button" data-window="projects">
+                <span class="pixel-icon pixel-icon--folder" aria-hidden="true"></span>
+                <span>PROJECTS</span>
+              </button>
+              <button class="desktop-icon" type="button" data-window="contact">
+                <span class="pixel-icon pixel-icon--mail" aria-hidden="true"></span>
+                <span>CONTACT</span>
+              </button>
+            </div>
+
+            <div class="retro-window" role="region" aria-live="polite" data-window-id="welcome" style="left: 180px; top: 105px;">
+              <div class="window-titlebar">
+                <span class="window-title">WELCOME.TXT</span>
+                <span class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button class="window-close" type="button" aria-label="Close window">×</button></span>
+              </div>
+              <div class="window-body" data-panel="welcome">
+                <span class="window-art" aria-hidden="true">:)</span>
+                <div><h2>WELCOME TO MY DESKTOP</h2><p>Double-click an icon to look around.</p></div>
+              </div>
+            </div>
+
+            <div class="retro-taskbar" aria-label="Open windows">
+              <span class="start-button"><b>◆</b> START</span>
+              <span class="task-divider"></span>
+              <div class="task-list"></div>
+              <span class="task-clock">12:95 PM</span>
+            </div>
+          </div>
+        </section>
       </main>
 
       <aside class="side-rail side-rail--right" aria-hidden="true">
@@ -59,6 +98,6 @@
       </aside>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js" defer></script>
   </body>
 </html>
