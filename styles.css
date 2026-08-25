@@ -177,4 +177,3 @@ body.minesweeper-victory .side-rail { color:#fff36b; }
   .window-body { padding:16px 12px; }
   .window-art { width:42px; height:42px; }
 }
-@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; } }

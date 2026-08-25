@@ -709,8 +709,6 @@ let qualityScale = 1;
 let slowFrames = 0;
 let vertices = [];
 
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-
 function hash(x, y) {
   let value = Math.imul(x, 374761393) + Math.imul(y, 668265263);
   value = Math.imul(value ^ (value >>> 13), 1274126177);
@@ -871,7 +869,7 @@ function draw(now) {
   } else {
     slowFrames = Math.max(0, slowFrames - 1);
   }
-  if (!reducedMotion.matches && !document.hidden) frameRequest = requestAnimationFrame(draw);
+  if (!document.hidden) frameRequest = requestAnimationFrame(draw);
 }
 
 addEventListener('resize', () => {
@@ -884,16 +882,7 @@ document.addEventListener('visibilitychange', () => {
   cancelAnimationFrame(frameRequest);
   if (document.hidden) {
     frameRequest = 0;
-  } else if (!reducedMotion.matches) {
-    last = performance.now();
-    frameRequest = requestAnimationFrame(draw);
-  }
-});
-reducedMotion.addEventListener?.('change', (event) => {
-  cancelAnimationFrame(frameRequest);
-  if (event.matches) {
-    draw(performance.now());
-  } else if (!document.hidden) {
+  } else {
     last = performance.now();
     frameRequest = requestAnimationFrame(draw);
   }
