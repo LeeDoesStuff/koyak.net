@@ -247,7 +247,7 @@ function startContactForm(windowElement) {
     status.textContent = '';
 
     try {
-      const response = await fetch('https://formsubmit.co/ajax/s@koyak.net', {
+      const response = await fetch('https://formsubmit.co/ajax/c42d371e5f8bd75a0d70b9650bb87234', {
         method: 'POST',
         headers: { Accept: 'application/json' },
         body: new URLSearchParams(new FormData(form))
