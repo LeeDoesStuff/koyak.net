@@ -1,4 +1,8 @@
 function fillRailLoops() {
+  // The rails are hidden by CSS on small screens. Measuring a display:none
+  // element always returns 0, so do not enter the fill loop in that state.
+  if (!matchMedia('(min-width: 521px)').matches) return;
+
   const viewportHeight = Math.max(
     window.innerHeight,
     document.documentElement.clientHeight,
@@ -15,8 +19,12 @@ function fillRailLoops() {
 
     // Each half of the track must cover the screen so the loop is full from
     // its very first frame, including on tall displays.
-    while (firstLoop.scrollHeight < viewportHeight + 40) {
+    // Keep a hard cap as a final safeguard for embedded previews that report
+    // incomplete layout measurements while the page is starting up.
+    let additions = 0;
+    while (firstLoop.scrollHeight < viewportHeight + 40 && additions < 64) {
       firstLoop.append(word.cloneNode(true));
+      additions += 1;
     }
 
     loops[1].replaceChildren(...Array.from(firstLoop.children, (item) => item.cloneNode(true)));
@@ -29,11 +37,126 @@ document.querySelectorAll('.social-links a').forEach((link) => {
   link.addEventListener('pointerup', () => link.blur());
 });
 
+const taskClock = document.querySelector('.task-clock');
+const clockFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit'
+});
+
+function updateTaskClock() {
+  if (!taskClock) return;
+
+  const now = new Date();
+  taskClock.textContent = clockFormatter.format(now);
+  taskClock.dateTime = now.toISOString();
+}
+
+function scheduleClockUpdate() {
+  updateTaskClock();
+  setTimeout(scheduleClockUpdate, 60000 - (Date.now() % 60000));
+}
+
+scheduleClockUpdate();
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) updateTaskClock();
+});
+
 const desktopContent = {
-  about: { title: 'ABOUT_ME.TXT', art: ':)', heading: 'HI, I\'M KOYAK', copy: 'I make colorful digital things, experiments, and tiny worlds for the web.' },
-  projects: { title: 'PROJECTS.EXE', art: '★', heading: 'MY PROJECTS', copy: 'New work is loading. Check back soon—or visit my GitHub from the profile bar above.' },
-  contact: { title: 'CONTACT.MSG', art: '@', heading: 'SAY HELLO', copy: 'The quickest way to reach me is through one of the profile links above.' }
+  about: { title: 'ABOUT_ME.TXT', art: ':)', heading: 'ABOUT ME', copy: 'I\'m KOYAK. I make games, I program, I love to create.' },
+  projects: { title: 'PROJECTS.EXE', type: 'projects' },
+  contact: { title: 'CONTACT.MSG', art: ':)', heading: 'SAY HELLO', copy: 'The quickest way to reach me is through one of the profile links above.' },
+  minesweeper: { title: 'MINESWEEPER.EXE', type: 'minesweeper' },
+  tetris: { title: 'TETRIS.EXE', type: 'tetris' }
 };
+
+const githubUsername = 'Kayyo321';
+
+function createProjectStatus(message, className = '') {
+  const status = document.createElement('p');
+  status.className = `projects-status ${className}`.trim();
+  status.textContent = message;
+  return status;
+}
+
+function createRepositoryCard(repository) {
+  const link = document.createElement('a');
+  link.className = 'repo-card';
+  link.href = repository.html_url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.setAttribute('aria-label', `Open ${repository.name} on GitHub`);
+
+  const header = document.createElement('span');
+  header.className = 'repo-card__header';
+  const name = document.createElement('strong');
+  name.textContent = repository.name;
+  const stars = document.createElement('span');
+  stars.className = 'repo-stars';
+  stars.textContent = `★ ${repository.stargazers_count}`;
+  header.append(name, stars);
+
+  const description = document.createElement('span');
+  description.className = 'repo-description';
+  description.textContent = repository.description || 'No description provided.';
+
+  const metadata = document.createElement('span');
+  metadata.className = 'repo-meta';
+  if (repository.language) {
+    const language = document.createElement('span');
+    language.textContent = repository.language;
+    metadata.append(language);
+  }
+  const forks = document.createElement('span');
+  forks.textContent = `⑂ ${repository.forks_count}`;
+  metadata.append(forks);
+
+  link.append(header, description, metadata);
+  return link;
+}
+
+async function loadProjects(windowElement) {
+  const projectList = windowElement.querySelector('.projects-list');
+  if (!projectList) return;
+
+  try {
+    const repositories = [];
+    let page = 1;
+    let pageResults = [];
+
+    do {
+      const response = await fetch(`https://api.github.com/users/${githubUsername}/repos?type=owner&per_page=100&page=${page}`);
+      if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+      pageResults = await response.json();
+      repositories.push(...pageResults);
+      page += 1;
+    } while (pageResults.length === 100);
+
+    repositories.sort((a, b) =>
+      b.stargazers_count - a.stargazers_count ||
+      new Date(b.updated_at) - new Date(a.updated_at) ||
+      a.name.localeCompare(b.name)
+    );
+
+    projectList.replaceChildren();
+    if (!repositories.length) {
+      projectList.append(createProjectStatus('No public repositories found.'));
+      return;
+    }
+
+    projectList.append(...repositories.map(createRepositoryCard));
+    windowElement.querySelector('.projects-count').textContent = `${repositories.length} public ${repositories.length === 1 ? 'repository' : 'repositories'} · sorted by stars`;
+  } catch (error) {
+    projectList.replaceChildren(
+      createProjectStatus('Could not load repositories right now.', 'projects-status--error')
+    );
+    const profileLink = document.createElement('a');
+    profileLink.href = `https://github.com/${githubUsername}?tab=repositories`;
+    profileLink.target = '_blank';
+    profileLink.rel = 'noopener noreferrer';
+    profileLink.textContent = 'View all repositories on GitHub →';
+    projectList.append(profileLink);
+  }
+}
 
 const retroScreen = document.querySelector('.retro-screen');
 const taskList = document.querySelector('.task-list');
@@ -44,6 +167,374 @@ function focusWindow(windowElement) {
   windowElement.style.zIndex = windowLayer;
   document.querySelectorAll('.retro-window').forEach((item) => item.classList.toggle('is-active', item === windowElement));
   taskList.querySelectorAll('.task-item').forEach((item) => item.classList.toggle('is-active', item.dataset.windowId === windowElement.dataset.windowId));
+}
+
+function centerWindow(windowElement) {
+  const usableHeight = retroScreen.clientHeight - 38;
+  windowElement.style.left = `${Math.max(0, (retroScreen.clientWidth - windowElement.offsetWidth) / 2)}px`;
+  windowElement.style.top = `${Math.max(0, (usableHeight - windowElement.offsetHeight) / 2)}px`;
+}
+
+function createWindowBody(content) {
+  if (content.type === 'minesweeper') {
+    const body = document.createElement('div');
+    body.className = 'window-body window-body--minesweeper';
+    body.innerHTML = `<div class="mine-toolbar"><span class="mine-counter" aria-label="Mines remaining">010</span><button class="mine-reset" type="button" aria-label="Start a new game">🙂</button><span class="mine-timer" aria-label="Elapsed time">000</span></div><div class="mine-actions"><button class="mine-flag-mode" type="button" aria-pressed="false">🚩 FLAG: OFF</button><span>9×9 · 10 MINES</span></div><div class="mine-grid" role="grid" aria-label="Minesweeper board"></div><p class="mine-help">Click to clear · right-click or use flag mode to mark</p><div class="mine-secret" role="status"><strong>★ SECRET MODE UNLOCKED ★</strong><span>Tetris has appeared on your desktop!</span></div>`;
+    return body;
+  }
+
+  if (content.type === 'tetris') {
+    const body = document.createElement('div');
+    body.className = 'window-body window-body--tetris';
+    body.innerHTML = `<div class="tetris-game"><canvas class="tetris-board" width="200" height="400" tabindex="0" role="img" aria-label="Tetris game board"></canvas><aside class="tetris-panel"><span class="tetris-label">SCORE</span><strong class="tetris-score">000000</strong><span class="tetris-label">LINES</span><strong class="tetris-lines">000</strong><span class="tetris-label">LEVEL</span><strong class="tetris-level">01</strong><span class="tetris-label">NEXT</span><canvas class="tetris-next" width="80" height="80" aria-label="Next piece"></canvas><button class="tetris-new" type="button">NEW GAME</button></aside></div><div class="tetris-controls" aria-label="Tetris controls"><button type="button" data-tetris-action="left" aria-label="Move left">◀</button><button type="button" data-tetris-action="rotate" aria-label="Rotate">↻</button><button type="button" data-tetris-action="right" aria-label="Move right">▶</button><button type="button" data-tetris-action="down" aria-label="Move down">▼</button><button type="button" data-tetris-action="drop" aria-label="Hard drop">DROP</button></div><p class="tetris-help">ARROWS MOVE · ↑ ROTATES · SPACE DROPS</p>`;
+    return body;
+  }
+
+  if (content.type === 'projects') {
+    const body = document.createElement('div');
+    body.className = 'window-body window-body--projects';
+    body.innerHTML = `<div class="projects-heading"><div><h2>MY REPOSITORIES</h2><p class="projects-count">Connecting to GitHub…</p></div><a href="https://github.com/${githubUsername}?tab=repositories" target="_blank" rel="noopener noreferrer">GITHUB ↗</a></div><div class="projects-list" aria-live="polite"></div>`;
+    body.querySelector('.projects-list').append(createProjectStatus('Loading repositories…'));
+    return body;
+  }
+
+  const body = document.createElement('div');
+  body.className = 'window-body';
+  body.innerHTML = `<span class="window-art" aria-hidden="true">${content.art}</span><div><h2>${content.heading}</h2><p>${content.copy}</p></div>`;
+  return body;
+}
+
+function startMinesweeper(windowElement) {
+  const rows = 9;
+  const columns = 9;
+  const mineTotal = 10;
+  const board = windowElement.querySelector('.mine-grid');
+  const mineCounter = windowElement.querySelector('.mine-counter');
+  const timer = windowElement.querySelector('.mine-timer');
+  const reset = windowElement.querySelector('.mine-reset');
+  const flagModeButton = windowElement.querySelector('.mine-flag-mode');
+  const secret = windowElement.querySelector('.mine-secret');
+  let cells = [];
+  let started = false;
+  let finished = false;
+  let flagMode = false;
+  let seconds = 0;
+  let timerId = 0;
+
+  // Window removal does not stop timers automatically. Give the desktop
+  // window lifecycle an explicit way to release this game's interval.
+  windowElement.cleanup = () => clearInterval(timerId);
+
+  const neighbors = (index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const result = [];
+    for (let rowStep = -1; rowStep <= 1; rowStep += 1) {
+      for (let columnStep = -1; columnStep <= 1; columnStep += 1) {
+        if (!rowStep && !columnStep) continue;
+        const nextRow = row + rowStep;
+        const nextColumn = column + columnStep;
+        if (nextRow >= 0 && nextRow < rows && nextColumn >= 0 && nextColumn < columns) result.push(nextRow * columns + nextColumn);
+      }
+    }
+    return result;
+  };
+
+  const updateCounter = () => {
+    const flags = cells.filter((cell) => cell.flagged).length;
+    mineCounter.textContent = String(Math.max(0, mineTotal - flags)).padStart(3, '0');
+  };
+
+  const placeMines = (safeIndex) => {
+    const forbidden = new Set([safeIndex, ...neighbors(safeIndex)]);
+    const choices = cells.map((_, index) => index).filter((index) => !forbidden.has(index));
+    for (let placed = 0; placed < mineTotal; placed += 1) {
+      const choice = Math.floor(Math.random() * choices.length);
+      cells[choices.splice(choice, 1)[0]].mine = true;
+    }
+    cells.forEach((cell, index) => {
+      cell.nearby = neighbors(index).filter((neighbor) => cells[neighbor].mine).length;
+    });
+  };
+
+  const endGame = (won) => {
+    finished = true;
+    clearInterval(timerId);
+    reset.textContent = won ? '😎' : '😵';
+    reset.setAttribute('aria-label', won ? 'You won! Start a new game' : 'Game over. Start a new game');
+    if (won) {
+      cells.forEach((cell) => { if (cell.mine) cell.flagged = true; });
+      document.body.classList.add('minesweeper-victory');
+      document.querySelector('[data-window="tetris"]')?.removeAttribute('hidden');
+      secret.classList.add('is-visible');
+    }
+    cells.forEach((cell) => {
+      if (cell.mine) {
+        cell.button.classList.add(won ? 'is-flagged' : 'is-mine');
+        cell.button.textContent = won ? '🚩' : '✹';
+      } else if (cell.flagged && !won) {
+        cell.button.classList.add('is-wrong');
+        cell.button.textContent = '×';
+      }
+    });
+    updateCounter();
+  };
+
+  const checkWin = () => {
+    if (cells.filter((cell) => cell.revealed).length === rows * columns - mineTotal) endGame(true);
+  };
+
+  const reveal = (index) => {
+    const cell = cells[index];
+    if (finished || cell.revealed || cell.flagged) return;
+    if (!started) {
+      started = true;
+      placeMines(index);
+      timerId = setInterval(() => {
+        seconds = Math.min(999, seconds + 1);
+        timer.textContent = String(seconds).padStart(3, '0');
+      }, 1000);
+    }
+    cell.revealed = true;
+    cell.button.classList.add('is-revealed');
+    cell.button.setAttribute('aria-label', cell.mine ? 'Mine' : cell.nearby ? `${cell.nearby} nearby mines` : 'Empty');
+    if (cell.mine) {
+      cell.button.classList.add('is-hit');
+      endGame(false);
+      return;
+    }
+    if (cell.nearby) {
+      cell.button.textContent = cell.nearby;
+      cell.button.dataset.count = cell.nearby;
+    } else {
+      neighbors(index).forEach(reveal);
+    }
+    checkWin();
+  };
+
+  const toggleFlag = (index) => {
+    const cell = cells[index];
+    if (finished || cell.revealed) return;
+    cell.flagged = !cell.flagged;
+    cell.button.classList.toggle('is-flagged', cell.flagged);
+    cell.button.textContent = cell.flagged ? '🚩' : '';
+    cell.button.setAttribute('aria-label', cell.flagged ? 'Flagged cell' : 'Hidden cell');
+    updateCounter();
+  };
+
+  const newGame = () => {
+    clearInterval(timerId);
+    started = false;
+    finished = false;
+    seconds = 0;
+    timer.textContent = '000';
+    reset.textContent = '🙂';
+    reset.setAttribute('aria-label', 'Start a new game');
+    board.replaceChildren();
+    cells = Array.from({ length: rows * columns }, (_, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mine-cell';
+      button.setAttribute('role', 'gridcell');
+      button.setAttribute('aria-label', 'Hidden cell');
+      button.addEventListener('click', () => flagMode ? toggleFlag(index) : reveal(index));
+      button.addEventListener('contextmenu', (event) => { event.preventDefault(); toggleFlag(index); });
+      board.append(button);
+      return { button, mine: false, nearby: 0, revealed: false, flagged: false };
+    });
+    updateCounter();
+  };
+
+  flagModeButton.addEventListener('click', () => {
+    flagMode = !flagMode;
+    flagModeButton.setAttribute('aria-pressed', String(flagMode));
+    flagModeButton.textContent = `🚩 FLAG: ${flagMode ? 'ON' : 'OFF'}`;
+  });
+  reset.addEventListener('click', newGame);
+  newGame();
+}
+
+function startTetris(windowElement) {
+  const canvas = windowElement.querySelector('.tetris-board');
+  const nextCanvas = windowElement.querySelector('.tetris-next');
+  const context = canvas.getContext('2d');
+  const nextContext = nextCanvas.getContext('2d');
+  const scoreDisplay = windowElement.querySelector('.tetris-score');
+  const linesDisplay = windowElement.querySelector('.tetris-lines');
+  const levelDisplay = windowElement.querySelector('.tetris-level');
+  const colors = ['#000', '#24d9ff', '#ffe44a', '#a855f7', '#4ade80', '#ff405c', '#4f7cff', '#ff9d32'];
+  const shapes = [
+    [[1, 1, 1, 1]],
+    [[2, 2], [2, 2]],
+    [[0, 3, 0], [3, 3, 3]],
+    [[0, 4, 4], [4, 4, 0]],
+    [[5, 5, 0], [0, 5, 5]],
+    [[6, 0, 0], [6, 6, 6]],
+    [[0, 0, 7], [7, 7, 7]]
+  ];
+  let board;
+  let piece;
+  let nextPiece;
+  let score;
+  let lines;
+  let level;
+  let gameOver;
+  let lastTime;
+  let dropTime;
+  let animationId;
+
+  const randomPiece = () => {
+    const shape = shapes[Math.floor(Math.random() * shapes.length)].map((row) => [...row]);
+    return { shape, x: Math.floor((10 - shape[0].length) / 2), y: 0 };
+  };
+
+  const collides = (candidate, offsetX = 0, offsetY = 0, shape = candidate.shape) => shape.some((row, y) => row.some((value, x) => {
+    if (!value) return false;
+    const boardX = candidate.x + x + offsetX;
+    const boardY = candidate.y + y + offsetY;
+    return boardX < 0 || boardX >= 10 || boardY >= 20 || (boardY >= 0 && board[boardY][boardX]);
+  }));
+
+  const drawBlock = (ctx, x, y, value, size) => {
+    ctx.fillStyle = colors[value];
+    ctx.fillRect(x * size, y * size, size, size);
+    ctx.fillStyle = 'rgba(255,255,255,.38)';
+    ctx.fillRect(x * size + 1, y * size + 1, size - 2, 2);
+    ctx.fillRect(x * size + 1, y * size + 1, 2, size - 2);
+    ctx.strokeStyle = 'rgba(0,0,0,.5)';
+    ctx.strokeRect(x * size + .5, y * size + .5, size - 1, size - 1);
+  };
+
+  const draw = () => {
+    context.fillStyle = '#090b18';
+    context.fillRect(0, 0, 200, 400);
+    context.strokeStyle = 'rgba(255,255,255,.055)';
+    for (let x = 0; x <= 10; x += 1) { context.beginPath(); context.moveTo(x * 20, 0); context.lineTo(x * 20, 400); context.stroke(); }
+    for (let y = 0; y <= 20; y += 1) { context.beginPath(); context.moveTo(0, y * 20); context.lineTo(200, y * 20); context.stroke(); }
+    board.forEach((row, y) => row.forEach((value, x) => { if (value) drawBlock(context, x, y, value, 20); }));
+    piece.shape.forEach((row, y) => row.forEach((value, x) => { if (value) drawBlock(context, piece.x + x, piece.y + y, value, 20); }));
+    if (gameOver) {
+      context.fillStyle = 'rgba(0,0,50,.86)';
+      context.fillRect(15, 155, 170, 88);
+      context.fillStyle = '#fff36b';
+      context.font = '700 14px Silkscreen, monospace';
+      context.textAlign = 'center';
+      context.fillText('GAME OVER', 100, 190);
+      context.fillStyle = '#fff';
+      context.font = '8px Silkscreen, monospace';
+      context.fillText('PRESS NEW GAME', 100, 217);
+    }
+  };
+
+  const drawNext = () => {
+    nextContext.fillStyle = '#090b18';
+    nextContext.fillRect(0, 0, 80, 80);
+    const size = 16;
+    const startX = (5 - nextPiece.shape[0].length) / 2;
+    const startY = (5 - nextPiece.shape.length) / 2;
+    nextPiece.shape.forEach((row, y) => row.forEach((value, x) => { if (value) drawBlock(nextContext, startX + x, startY + y, value, size); }));
+  };
+
+  const updateStats = () => {
+    scoreDisplay.textContent = String(score).padStart(6, '0');
+    linesDisplay.textContent = String(lines).padStart(3, '0');
+    levelDisplay.textContent = String(level).padStart(2, '0');
+  };
+
+  const spawn = () => {
+    piece = nextPiece;
+    piece.x = Math.floor((10 - piece.shape[0].length) / 2);
+    piece.y = 0;
+    nextPiece = randomPiece();
+    drawNext();
+    if (collides(piece)) gameOver = true;
+  };
+
+  const lock = () => {
+    piece.shape.forEach((row, y) => row.forEach((value, x) => { if (value && piece.y + y >= 0) board[piece.y + y][piece.x + x] = value; }));
+    let cleared = 0;
+    for (let y = 19; y >= 0; y -= 1) {
+      if (board[y].every(Boolean)) {
+        board.splice(y, 1);
+        board.unshift(Array(10).fill(0));
+        cleared += 1;
+        y += 1;
+      }
+    }
+    if (cleared) {
+      lines += cleared;
+      score += [0, 100, 300, 500, 800][cleared] * level;
+      level = Math.floor(lines / 10) + 1;
+      updateStats();
+    }
+    spawn();
+  };
+
+  const moveDown = (manual = false) => {
+    if (gameOver) return;
+    if (!collides(piece, 0, 1)) {
+      piece.y += 1;
+      if (manual) { score += 1; updateStats(); }
+    } else lock();
+    dropTime = 0;
+    draw();
+  };
+
+  const act = (action) => {
+    if (gameOver) return;
+    if (action === 'left' && !collides(piece, -1)) piece.x -= 1;
+    if (action === 'right' && !collides(piece, 1)) piece.x += 1;
+    if (action === 'down') moveDown(true);
+    if (action === 'rotate') {
+      const rotated = piece.shape[0].map((_, index) => piece.shape.map((row) => row[index]).reverse());
+      for (const kick of [0, -1, 1, -2, 2]) {
+        if (!collides(piece, kick, 0, rotated)) { piece.x += kick; piece.shape = rotated; break; }
+      }
+    }
+    if (action === 'drop') {
+      let distance = 0;
+      while (!collides(piece, 0, 1)) { piece.y += 1; distance += 1; }
+      score += distance * 2;
+      updateStats();
+      lock();
+      dropTime = 0;
+    }
+    draw();
+  };
+
+  const loop = (time = 0) => {
+    const delta = time - lastTime;
+    lastTime = time;
+    if (!gameOver) {
+      dropTime += Math.min(delta, 100);
+      if (dropTime > Math.max(90, 800 - (level - 1) * 65)) moveDown();
+    }
+    draw();
+    animationId = requestAnimationFrame(loop);
+  };
+
+  const newGame = () => {
+    board = Array.from({ length: 20 }, () => Array(10).fill(0));
+    score = 0; lines = 0; level = 1; gameOver = false; dropTime = 0; lastTime = performance.now();
+    nextPiece = randomPiece();
+    spawn();
+    updateStats();
+    canvas.focus();
+  };
+
+  const onKeyDown = (event) => {
+    if (!windowElement.isConnected || !windowElement.classList.contains('is-active')) return;
+    const actions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'down', ArrowUp: 'rotate', ' ': 'drop' };
+    if (!actions[event.key]) return;
+    event.preventDefault();
+    act(actions[event.key]);
+  };
+  document.addEventListener('keydown', onKeyDown);
+  windowElement.querySelectorAll('[data-tetris-action]').forEach((button) => button.addEventListener('click', () => { act(button.dataset.tetrisAction); canvas.focus(); }));
+  windowElement.querySelector('.tetris-new').addEventListener('click', newGame);
+  windowElement.cleanup = () => { cancelAnimationFrame(animationId); document.removeEventListener('keydown', onKeyDown); };
+  newGame();
+  animationId = requestAnimationFrame(loop);
 }
 
 function addTaskbarItem(windowElement) {
@@ -66,6 +557,7 @@ function enableDesktopWindow(windowElement) {
 
   addTaskbarItem(windowElement);
   closeButton.addEventListener('click', () => {
+    windowElement.cleanup?.();
     taskList.querySelector(`[data-window-id="${windowElement.dataset.windowId}"]`)?.remove();
     windowElement.remove();
     const topWindow = Array.from(retroScreen.querySelectorAll('.retro-window')).sort((a, b) => (Number(b.style.zIndex) || 0) - (Number(a.style.zIndex) || 0))[0];
@@ -96,6 +588,7 @@ function enableDesktopWindow(windowElement) {
 }
 
 document.querySelectorAll('.retro-window').forEach((windowElement) => {
+  centerWindow(windowElement);
   enableDesktopWindow(windowElement);
   focusWindow(windowElement);
 });
@@ -112,16 +605,21 @@ document.querySelectorAll('.desktop-icon').forEach((icon) => {
       return;
     }
     const windowElement = document.createElement('div');
-    const offset = retroScreen.querySelectorAll('.retro-window').length * 24;
     windowElement.className = 'retro-window';
     windowElement.dataset.windowId = icon.dataset.window;
     windowElement.setAttribute('role', 'region');
-    windowElement.style.left = `${Math.min(retroScreen.clientWidth - 320, 150 + offset)}px`;
-    windowElement.style.top = `${Math.min(245, 70 + offset)}px`;
-    windowElement.innerHTML = `<div class="window-titlebar"><span class="window-title">${content.title}</span><span class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button class="window-close" type="button" aria-label="Close window">×</button></span></div><div class="window-body"><span class="window-art" aria-hidden="true">${content.art}</span><div><h2>${content.heading}</h2><p>${content.copy}</p></div></div>`;
+    windowElement.innerHTML = `<div class="window-titlebar"><span class="window-title">${content.title}</span><span class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button class="window-close" type="button" aria-label="Close window">×</button></span></div>`;
+    windowElement.append(createWindowBody(content));
+    if (content.type === 'projects') windowElement.classList.add('retro-window--projects');
+    if (content.type === 'minesweeper') windowElement.classList.add('retro-window--minesweeper');
+    if (content.type === 'tetris') windowElement.classList.add('retro-window--tetris');
     retroScreen.append(windowElement);
+    centerWindow(windowElement);
     enableDesktopWindow(windowElement);
     focusWindow(windowElement);
+    if (content.type === 'projects') loadProjects(windowElement);
+    if (content.type === 'minesweeper') startMinesweeper(windowElement);
+    if (content.type === 'tetris') startTetris(windowElement);
   });
 });
 
@@ -136,10 +634,11 @@ let phase = 0;
 let cellSize = 28;
 let columns = 0;
 let rows = 0;
-let verticalOverscan = 0;
-let scrollingUntil = 0;
 let frameRequest = 0;
 let targetFps = 30;
+let qualityScale = 1;
+let slowFrames = 0;
+let vertices = [];
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -175,28 +674,32 @@ function fbm(x, y) {
 
 function resize() {
   width = innerWidth;
-  // Mobile browser chrome changes the visual viewport while scrolling. Render
-  // well beyond both vertical edges so newly revealed space is already filled.
-  verticalOverscan = Math.max(140, Math.round(innerHeight * .18));
-  height = innerHeight + verticalOverscan * 2;
+  // The canvas uses the large viewport in CSS, so size its drawing buffer to
+  // that same stable area instead of the smaller, browser-chrome-dependent
+  // innerHeight. Scrolling can then only crop/reveal it, never rescale it.
+  height = Math.max(1, Math.ceil(canvas.getBoundingClientRect().height));
   // The geometry is deliberately pixel-snapped, so extra device pixels add
   // substantial work without improving the intended visual style.
   const ratio = 1;
   canvas.width = Math.max(1, Math.round(width * ratio));
   canvas.height = Math.max(1, Math.round(height * ratio));
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  canvas.style.top = `${-verticalOverscan}px`;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   // Phones need fewer cells, not smaller ones: the canvas remains pixelated
   // while using a fraction of the CPU/GPU work in embedded previews.
-  cellSize = width <= 520 ? 22 : width <= 900 ? 19 : 17;
-  targetFps = width <= 520 ? 15 : width <= 900 ? 24 : 30;
+  cellSize = Math.round((width <= 520 ? 24 : width <= 900 ? 22 : 20) * qualityScale);
+  targetFps = width <= 520 ? 12 : width <= 900 ? 18 : 24;
   columns = Math.ceil(width / cellSize) + 8;
   rows = Math.ceil(height / cellSize) + 8;
+  const vertexCount = (rows + 1) * (columns + 1);
+  if (vertices.length !== vertexCount) {
+    // Reuse vertex records between frames. The old implementation allocated
+    // thousands of nested arrays and objects on every draw, eventually
+    // producing visible garbage-collection pauses on long-running tabs.
+    vertices = Array.from({ length: vertexCount }, () => ({ x: 0, y: 0, depth: 0, terrain: 0 }));
+  }
 }
 
-function vertex(column, row, time) {
+function updateVertex(column, row, time, point) {
   const baseX = (column - 4) * cellSize;
   const baseY = (row - 4) * cellSize;
   const nx = column * .115;
@@ -211,12 +714,10 @@ function vertex(column, row, time) {
   const warpY = (fbm(nx * 2.8, ny * 2.8 - 53 - time * .08) - .5) * cellSize * .9;
   const perspective = 1 + depth * .06;
 
-  return {
-    x: width * .5 + (baseX - width * .5) * perspective + warpX,
-    y: height * .5 + (baseY - height * .5) * perspective + warpY - depth * cellSize * 1.15,
-    depth,
-    terrain
-  };
+  point.x = width * .5 + (baseX - width * .5) * perspective + warpX;
+  point.y = height * .5 + (baseY - height * .5) * perspective + warpY - depth * cellSize * 1.15;
+  point.depth = depth;
+  point.terrain = terrain;
 }
 
 function colorFor(p0, p1, p2, p3, x, y, time) {
@@ -238,7 +739,7 @@ function pixelSnap(value) {
 }
 
 function draw(now) {
-  const frameInterval = now < scrollingUntil ? Math.max(50, 1000 / targetFps) : 1000 / targetFps;
+  const frameInterval = 1000 / targetFps;
   if (now - lastFrame < frameInterval) {
     frameRequest = requestAnimationFrame(draw);
     return;
@@ -246,6 +747,7 @@ function draw(now) {
   lastFrame = now;
   const delta = Math.min((now - last) / 1000, .05);
   last = now;
+  const renderStarted = performance.now();
 
   // Smoothly lerp from an energetic entrance to a slow, ambient drift.
   const targetSpeed = .72;
@@ -255,19 +757,22 @@ function draw(now) {
   ctx.fillStyle = '#05060a';
   ctx.fillRect(0, 0, width, height);
 
-  const vertices = Array.from({ length: rows + 1 }, (_, y) =>
-    Array.from({ length: columns + 1 }, (_, x) => vertex(x, y, phase))
-  );
+  for (let y = 0; y <= rows; y += 1) {
+    for (let x = 0; x <= columns; x += 1) {
+      updateVertex(x, y, phase, vertices[y * (columns + 1) + x]);
+    }
+  }
 
   ctx.setLineDash([4, 2]);
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(1, 3, 8, .38)';
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < columns; x++) {
-      const p0 = vertices[y][x];
-      const p1 = vertices[y][x + 1];
-      const p2 = vertices[y + 1][x + 1];
-      const p3 = vertices[y + 1][x];
+      const topLeft = y * (columns + 1) + x;
+      const p0 = vertices[topLeft];
+      const p1 = vertices[topLeft + 1];
+      const p3 = vertices[topLeft + columns + 1];
+      const p2 = vertices[topLeft + columns + 2];
       ctx.beginPath();
       ctx.moveTo(pixelSnap(p0.x), pixelSnap(p0.y));
       ctx.lineTo(pixelSnap(p1.x), pixelSnap(p1.y));
@@ -283,19 +788,43 @@ function draw(now) {
     }
   }
   ctx.setLineDash([]);
+
+  // Embedded previews often have limited CPU/GPU resources. If several
+  // frames are expensive, lower only the mesh resolution; the full animated
+  // effect and all of its colors remain intact.
+  if (performance.now() - renderStarted > 34) {
+    slowFrames += 1;
+    if (slowFrames >= 4 && qualityScale < 1.6) {
+      qualityScale = Math.min(1.6, qualityScale + .2);
+      slowFrames = 0;
+      resize();
+    }
+  } else {
+    slowFrames = Math.max(0, slowFrames - 1);
+  }
   if (!reducedMotion.matches && !document.hidden) frameRequest = requestAnimationFrame(draw);
 }
 
-let resizeTimer;
 addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(resize, 120);
+  // Mobile browser chrome emits height-only resize events during scrolling.
+  // Let CSS scale the fixed canvas through those events so the animation is
+  // never cleared or restarted just because the user scrolled.
+  if (innerWidth !== width) resize();
 }, { passive: true });
-addEventListener('scroll', () => { scrollingUntil = performance.now() + 140; }, { passive: true });
 document.addEventListener('visibilitychange', () => {
+  cancelAnimationFrame(frameRequest);
   if (document.hidden) {
-    cancelAnimationFrame(frameRequest);
+    frameRequest = 0;
   } else if (!reducedMotion.matches) {
+    last = performance.now();
+    frameRequest = requestAnimationFrame(draw);
+  }
+});
+reducedMotion.addEventListener?.('change', (event) => {
+  cancelAnimationFrame(frameRequest);
+  if (event.matches) {
+    draw(performance.now());
+  } else if (!document.hidden) {
     last = performance.now();
     frameRequest = requestAnimationFrame(draw);
   }
