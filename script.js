@@ -64,7 +64,7 @@ document.addEventListener('visibilitychange', () => {
 const desktopContent = {
   about: { title: 'ABOUT_ME.TXT', art: ':)', heading: 'ABOUT ME', copy: 'I\'m KOYAK. I make games, I program, I love to create.' },
   projects: { title: 'PROJECTS.EXE', type: 'projects' },
-  contact: { title: 'CONTACT.MSG', art: ':)', heading: 'SAY HELLO', copy: 'The quickest way to reach me is through one of the profile links above.' },
+  contact: { title: 'NEW_MESSAGE.MSG', type: 'contact' },
   minesweeper: { title: 'MINESWEEPER.EXE', type: 'minesweeper' },
   tetris: { title: 'TETRIS.EXE', type: 'tetris' }
 };
@@ -176,6 +176,13 @@ function centerWindow(windowElement) {
 }
 
 function createWindowBody(content) {
+  if (content.type === 'contact') {
+    const body = document.createElement('div');
+    body.className = 'window-body window-body--contact';
+    body.innerHTML = `<form class="contact-form"><label for="contact-from">FROM</label><input id="contact-from" name="email" type="email" autocomplete="email" required placeholder="you@example.com"><label for="contact-subject">SUBJECT</label><input id="contact-subject" name="_subject" type="text" maxlength="120" required placeholder="What is this about?"><label for="contact-body">BODY</label><textarea id="contact-body" name="message" rows="6" maxlength="5000" required placeholder="Write your message here..."></textarea><input class="contact-trap" type="text" name="_honey" tabindex="-1" autocomplete="off" aria-hidden="true"><input type="hidden" name="_template" value="table"><input type="hidden" name="_url" value="https://koyak.net"><div class="contact-actions"><span class="contact-status" role="status" aria-live="polite"></span><button class="contact-send" type="submit">SEND</button></div></form>`;
+    return body;
+  }
+
   if (content.type === 'minesweeper') {
     const body = document.createElement('div');
     body.className = 'window-body window-body--minesweeper';
@@ -202,6 +209,66 @@ function createWindowBody(content) {
   body.className = 'window-body';
   body.innerHTML = `<span class="window-art" aria-hidden="true">${content.art}</span><div><h2>${content.heading}</h2><p>${content.copy}</p></div>`;
   return body;
+}
+
+function showContactConfirmation(contactWindow) {
+  const existingPopup = retroScreen.querySelector('[data-window-id="message-sent"]');
+  if (existingPopup) existingPopup.querySelector('.window-close').click();
+
+  const popup = document.createElement('div');
+  popup.className = 'retro-window retro-window--confirmation';
+  popup.dataset.windowId = 'message-sent';
+  popup.setAttribute('role', 'dialog');
+  popup.setAttribute('aria-modal', 'true');
+  popup.setAttribute('aria-labelledby', 'message-sent-title');
+  popup.innerHTML = `<div class="window-titlebar"><span class="window-title" id="message-sent-title">MESSAGE SENT</span><span class="window-controls"><button class="window-close" type="button" aria-label="Close confirmation">×</button></span></div><div class="window-body window-body--confirmation"><span class="confirmation-icon" aria-hidden="true">✓</span><div><h2>MESSAGE SENT!</h2><p>Thanks for reaching out. Your message is on its way.</p><button class="confirmation-ok" type="button">OK</button></div></div>`;
+  retroScreen.append(popup);
+  centerWindow(popup);
+  enableDesktopWindow(popup);
+  focusWindow(popup);
+
+  const closePopup = () => popup.querySelector('.window-close').click();
+  popup.querySelector('.confirmation-ok').addEventListener('click', closePopup);
+  popup.querySelector('.window-close').focus();
+  popup.cleanup = () => contactWindow.querySelector('#contact-from')?.focus();
+}
+
+function startContactForm(windowElement) {
+  const form = windowElement.querySelector('.contact-form');
+  const sendButton = form.querySelector('.contact-send');
+  const status = form.querySelector('.contact-status');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+
+    sendButton.disabled = true;
+    sendButton.textContent = 'SENDING...';
+    status.textContent = '';
+
+    try {
+      const response = await fetch('https://formsubmit.co/ajax/s@koyak.net', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: new URLSearchParams(new FormData(form))
+      });
+      const result = await response.json();
+      if (!response.ok || result.success === false || result.success === 'false') {
+        throw new Error(result.message || `Mail service returned ${response.status}`);
+      }
+
+      form.reset();
+      showContactConfirmation(windowElement);
+    } catch (error) {
+      const isPreview = !/(^|\.)koyak\.net$/i.test(location.hostname);
+      status.textContent = isPreview
+        ? 'LIVE PREVIEW BLOCKED SEND. TEST ON KOYAK.NET.'
+        : 'COULD NOT SEND. PLEASE TRY AGAIN.';
+    } finally {
+      sendButton.disabled = false;
+      sendButton.textContent = 'SEND';
+    }
+  });
 }
 
 function startMinesweeper(windowElement) {
@@ -611,6 +678,7 @@ document.querySelectorAll('.desktop-icon').forEach((icon) => {
     windowElement.innerHTML = `<div class="window-titlebar"><span class="window-title">${content.title}</span><span class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button class="window-close" type="button" aria-label="Close window">×</button></span></div>`;
     windowElement.append(createWindowBody(content));
     if (content.type === 'projects') windowElement.classList.add('retro-window--projects');
+    if (content.type === 'contact') windowElement.classList.add('retro-window--contact');
     if (content.type === 'minesweeper') windowElement.classList.add('retro-window--minesweeper');
     if (content.type === 'tetris') windowElement.classList.add('retro-window--tetris');
     retroScreen.append(windowElement);
@@ -618,6 +686,7 @@ document.querySelectorAll('.desktop-icon').forEach((icon) => {
     enableDesktopWindow(windowElement);
     focusWindow(windowElement);
     if (content.type === 'projects') loadProjects(windowElement);
+    if (content.type === 'contact') startContactForm(windowElement);
     if (content.type === 'minesweeper') startMinesweeper(windowElement);
     if (content.type === 'tetris') startTetris(windowElement);
   });
