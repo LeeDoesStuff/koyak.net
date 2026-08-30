@@ -4,10 +4,11 @@ html { min-height:100%; scroll-behavior:smooth; background:#05060a; }
 body { margin:0; min-height:100vh; min-height:100lvh; color:var(--text); background:#05060a; font-family:Silkscreen,monospace; overflow-x:hidden; }
 button,input,textarea,select { font-family:inherit; }
 body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:1; opacity:.17; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); mix-blend-mode:soft-light; }
-.plasma { position:fixed; inset:0; width:100vw; height:100vh; height:100lvh; z-index:0; pointer-events:none; filter:saturate(1.28) contrast(1.12); }
+.fps-meter { position:fixed; z-index:70; top:6px; left:50%; padding:3px 9px; transform:translateX(-50%); color:#65f5a3; background:rgba(5,6,10,.62); border:1px solid rgba(101,245,163,.34); font:700 10px Silkscreen,monospace; letter-spacing:.08em; text-shadow:1px 1px 0 #000; pointer-events:none; font-variant-numeric:tabular-nums; }
+.plasma { position:fixed; inset:0; width:100vw; height:100vh; height:100lvh; z-index:0; pointer-events:none; image-rendering:pixelated; }
 .mist { position:fixed; z-index:0; width:120vmax; height:120vmax; left:50%; top:50%; pointer-events:none; border-radius:43% 57% 61% 39% / 41% 36% 64% 59%; opacity:.22; mix-blend-mode:screen; filter:blur(34px); background:conic-gradient(from 90deg, #ff225b, #ffea00, #00ff95, #00a6ff, #a43aff, #ff225b); animation:mistFold 15s steps(24,end) infinite, rainbowPulse 5s steps(10,end) infinite; will-change:transform,opacity; }
 .mist--two { width:85vmax; height:85vmax; opacity:.15; animation-duration:19s, 7s; animation-direction:reverse, normal; }
-@keyframes mistFold { 0%,100% { transform:translate(-50%,-50%) rotate(0deg) scale(.75,1.1); border-radius:43% 57% 61% 39% / 41% 36% 64% 59%; } 50% { transform:translate(-50%,-50%) rotate(180deg) scale(1.15,.7); border-radius:65% 35% 31% 69% / 32% 62% 38% 68%; } }
+@keyframes mistFold { 0%,100% { transform:translate(-50%,-50%) rotate(0deg) scale(.75,1.1); } 50% { transform:translate(-50%,-50%) rotate(180deg) scale(1.15,.7); } }
 @keyframes rainbowPulse { 0%,100% { opacity:.12; } 50% { opacity:.3; } }
 .page-shell { position:relative; z-index:2; width:min(920px,82vw); margin:0 auto; display:grid; grid-template-columns:52px minmax(0,816px) 52px; min-height:100vh; min-height:100lvh; }
 .side-rail { position:sticky; z-index:3; top:0; height:100vh; height:100lvh; overflow:visible; isolation:isolate; background:rgba(4,5,8,.32); border-inline:3px solid #030304; backdrop-filter:blur(5px); }
@@ -111,7 +112,6 @@ body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index
 .mine-secret strong { color:#fff36b; font-size:9px; }
 .mine-secret span { font:400 9px/1.4 Silkscreen,monospace; }
 @keyframes secretFlash { 50% { background:#750075; } }
-body.minesweeper-victory .plasma { filter:hue-rotate(150deg) saturate(2.3) contrast(1.2); }
 body.minesweeper-victory .mist { opacity:.48; animation-duration:5s,1.5s; }
 body.minesweeper-victory .profile { animation:victoryGlow 2.4s steps(8,end) infinite; }
 body.minesweeper-victory .retro-screen::before { animation-duration:2.4s; }
@@ -173,3 +173,24 @@ body.minesweeper-victory .side-rail { color:#fff36b; }
   .window-body { padding:16px 12px; }
   .window-art { width:42px; height:42px; }
 }
+
+.pixel-icon--plane { width:38px; height:36px; background:linear-gradient(#eef3fb,#b9c6da); clip-path:polygon(45% 0,55% 0,59% 30%,100% 50%,100% 64%,59% 55%,59% 78%,72% 88%,72% 100%,50% 92%,28% 100%,28% 88%,41% 78%,41% 55%,0 64%,0 50%,41% 30%); }
+body.flight-mode { overflow:hidden; }
+body.flight-mode .page-shell,body.flight-mode .mist,body.flight-mode::before { display:none; }
+.flight-sim { position:fixed; z-index:60; inset:0; overflow:hidden; font-family:Silkscreen,monospace; }
+.flight-sim:not(.is-over),.flight-sim:not(.is-over) * { cursor:none; }
+.flight-canvas { position:absolute; inset:0; display:block; width:100%; height:100%; }
+/* The enemies and the plane are painted onto .flight-canvas now. This is the
+   only copy of the GIF left: it has to stay painted for its frames to keep
+   advancing, and every enemy is drawn from it. */
+.flight-source { position:absolute; top:0; left:0; width:64px; height:64px; opacity:.01; pointer-events:none; }
+.flight-hud { position:absolute; z-index:2; inset:0 auto auto 0; width:100%; padding:16px 20px; display:flex; align-items:center; gap:26px; color:#eef4fa; font:700 11px Silkscreen,monospace; letter-spacing:.06em; text-shadow:2px 2px 0 #000,0 0 12px rgba(0,0,0,.8); pointer-events:none; }
+.flight-hud b { color:#fff36b; }
+.flight-hud .flight-lives { color:#65f5a3; letter-spacing:.14em; }
+.flight-hint { margin-left:auto; color:#a6b0bf; font-weight:400; }
+.flight-over { position:absolute; z-index:3; inset:0; display:grid; place-items:center; background:rgba(5,6,10,.62); }
+.flight-over[hidden] { display:none; }
+.flight-over-window { position:relative; width:min(430px,86vw); }
+.flight-over-icon { background:#8b0000; border-color:#ff7676 #3d0000 #3d0000 #ff7676; }
+.flight-over .flight-final { margin-bottom:4px!important; }
+.flight-over .confirmation-ok { float:none; margin-top:13px; }
