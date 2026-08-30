@@ -74,7 +74,7 @@ function trackFps(now) {
         renderScale = Math.max(.5, renderScale - .25);
         slowSamples = 0;
         resize();
-      } else if (fastSamples >= 12 && renderScale < 1) {
+      } else if (fastSamples >= 30 && renderScale < 1) {
         renderScale = Math.min(1, renderScale + .25);
         fastSamples = 0;
         resize();
@@ -382,10 +382,7 @@ function startMinesweeper(windowElement) {
     reset.setAttribute('aria-label', won ? 'You won! Start a new game' : 'Game over. Start a new game');
     if (won) {
       cells.forEach((cell) => { if (cell.mine) cell.flagged = true; });
-      document.body.classList.add('minesweeper-victory');
-      document.querySelector('[data-window="tetris"]')?.removeAttribute('hidden');
-      unlockFlightSim();
-      secret.classList.add('is-visible');
+      unlockSecretMode();
     }
     cells.forEach((cell) => {
       if (cell.mine) {
@@ -810,6 +807,11 @@ function setPlasmaBoost(boosted) {
 }
 
 function resize() {
+  // A viewport can momentarily measure nothing while the page is settling.
+  // Sizing to that gives a 1x1 buffer stretched over the whole screen, which
+  // reads as a solid black frame; keep the last good size and wait for the
+  // resize that reports a real one.
+  if (!innerWidth) return;
   width = innerWidth;
   // The canvas uses the large viewport in CSS, so size its drawing buffer to
   // that same stable area instead of the smaller, browser-chrome-dependent
@@ -837,6 +839,8 @@ function resize() {
     // producing visible garbage-collection pauses on long-running tabs.
     vertices = Array.from({ length: vertexCount }, () => ({ x: 0, y: 0, depth: 0, terrain: 0 }));
   }
+
+  renderMesh();
 }
 
 function updateVertex(column, row, time, point) {
@@ -979,6 +983,35 @@ function draw(now) {
   flow += (targetSpeed - flow) * (1 - Math.exp(-delta * .48));
   phase += delta * flow;
 
+  renderMesh();
+
+  // Embedded previews often have limited CPU/GPU resources. If several
+  // frames are expensive, lower only the mesh resolution; the full animated
+  // effect and all of its colors remain intact.
+  if (performance.now() - renderStarted > (plasmaBoost ? 14 : 34)) {
+    slowFrames += 1;
+    if (slowFrames >= 4 && qualityScale < 1.6) {
+      qualityScale = Math.min(1.6, qualityScale + .2);
+      slowFrames = 0;
+      resize();
+    }
+  } else {
+    slowFrames = Math.max(0, slowFrames - 1);
+  }
+  if (!document.hidden) frameRequest = requestAnimationFrame(draw);
+}
+
+// Paints the mesh at whatever the current phase is. Kept separate from draw()
+// so resize() can repaint immediately: assigning canvas.width wipes the canvas,
+// and with the frame rate throttled the next scheduled paint can be up to a
+// twelfth of a second away. That gap showed the near-black page underneath as
+// a full-screen black flash - most visibly in the flight sim, where the plasma
+// is the entire screen.
+function renderMesh() {
+  // Nothing to paint until a resize has reported a real viewport and built
+  // the grid. Leaving the canvas untouched here keeps whatever was last on it.
+  if (!vertices.length) return;
+
   ctx.fillStyle = '#05060a';
   ctx.fillRect(0, 0, width, height);
 
@@ -1013,21 +1046,6 @@ function draw(now) {
     }
   }
   ctx.setLineDash([]);
-
-  // Embedded previews often have limited CPU/GPU resources. If several
-  // frames are expensive, lower only the mesh resolution; the full animated
-  // effect and all of its colors remain intact.
-  if (performance.now() - renderStarted > (plasmaBoost ? 14 : 34)) {
-    slowFrames += 1;
-    if (slowFrames >= 4 && qualityScale < 1.6) {
-      qualityScale = Math.min(1.6, qualityScale + .2);
-      slowFrames = 0;
-      resize();
-    }
-  } else {
-    slowFrames = Math.max(0, slowFrames - 1);
-  }
-  if (!document.hidden) frameRequest = requestAnimationFrame(draw);
 }
 
 addEventListener('resize', () => {
@@ -1061,6 +1079,30 @@ let flightUnlocked = false;
 // once at the moment of the win meant a window that was narrow just then -
 // or a viewport still reporting nothing - locked the reward away for the rest
 // of the session, with no way to earn it back.
+// Secret mode: won at minesweeper, or typed for. Both routes land here so
+// there is only one description of what unlocking actually does.
+function unlockSecretMode() {
+  document.body.classList.add('minesweeper-victory');
+  document.querySelector('[data-window="tetris"]')?.removeAttribute('hidden');
+  unlockFlightSim();
+  // Only there to be revealed if the minesweeper window happens to be open.
+  document.querySelector('.mine-secret')?.classList.add('is-visible');
+}
+
+const secretWord = 'koyak';
+let typedKeys = '';
+
+document.addEventListener('keydown', (event) => {
+  // Whatever the visitor is filling in gets to keep its keystrokes - the
+  // contact form spells this word rather often.
+  const target = event.target;
+  if (target instanceof Element && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+  if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+  // A rolling window, so the word still counts after a false start.
+  typedKeys = (typedKeys + event.key.toLowerCase()).slice(-secretWord.length);
+  if (typedKeys === secretWord) unlockSecretMode();
+});
+
 function unlockFlightSim() {
   flightUnlocked = true;
   showFlightIcon();
@@ -1554,3 +1596,127 @@ function startFlightSim() {
   updateHud();
   animationId = requestAnimationFrame(step);
 }
+
+// Every so often a Mizzlebip flaps across the page. Clicking one pops it: it
+// bursts, tumbles to the bottom of the screen and is erased, and a copy of it
+// takes up residence in the fake desktop's taskbar tray.
+const mizzlebipSky = document.querySelector('.mizzlebip-sky');
+const mizzlebipTray = document.querySelector('.task-tray');
+const mizzlebipTrayLimit = 8;
+const mizzlebipGravity = 1500;
+const mizzlebipFlap = -330;
+let mizzlebip = null;
+let mizzlebipFrame = 0;
+let mizzlebipLast = 0;
+
+function scheduleMizzlebip(delay) {
+  setTimeout(spawnMizzlebip, delay);
+}
+
+function catchMizzlebip() {
+  if (!mizzlebipTray || mizzlebipTray.childElementCount >= mizzlebipTrayLimit) return;
+  const icon = document.createElement('img');
+  icon.src = 'Imgs/Mizzlebip.png';
+  icon.alt = 'Caught Mizzlebip';
+  mizzlebipTray.append(icon);
+}
+
+function despawnMizzlebip(nextDelay) {
+  if (!mizzlebip) return;
+  cancelAnimationFrame(mizzlebipFrame);
+  mizzlebip.element.remove();
+  mizzlebip = null;
+  scheduleMizzlebip(nextDelay);
+}
+
+function flyMizzlebip(now) {
+  const bird = mizzlebip;
+  if (!bird) return;
+  mizzlebipFrame = requestAnimationFrame(flyMizzlebip);
+
+  // The flight sim takes the whole screen, so anything out here is invisible
+  // and has no business still animating.
+  if (document.body.classList.contains('flight-mode')) {
+    despawnMizzlebip(20000);
+    return;
+  }
+
+  const delta = Math.min((now - mizzlebipLast) / 1000, .05);
+  mizzlebipLast = now;
+
+  bird.vy += mizzlebipGravity * delta;
+
+  if (bird.popped) {
+    bird.pop = Math.max(0, bird.pop - delta * 6);
+    bird.tilt += bird.tumble * delta;
+  } else {
+    bird.x += bird.vx * delta;
+    // Flapping only when it has sunk far enough below the line it came in on
+    // keeps the bob tight and stops it wandering off the top or bottom.
+    if (bird.y > bird.lane + 26) bird.vy = mizzlebipFlap;
+    bird.tilt = Math.max(-18, Math.min(40, bird.vy * .05));
+  }
+
+  bird.y += bird.vy * delta;
+
+  const scale = 1 + bird.pop * .55;
+  bird.element.style.transform = `translate3d(${bird.x - 17}px, ${bird.y - 28}px, 0) rotate(${bird.tilt}deg) scale(${bird.facing * scale}, ${scale})`;
+
+  const goneSideways = !bird.popped && (bird.x < -140 || bird.x > innerWidth + 140);
+  const goneDown = bird.popped && bird.y > innerHeight + 90;
+  if (goneSideways || goneDown) despawnMizzlebip(24000 + Math.random() * 32000);
+}
+
+function popMizzlebip() {
+  const bird = mizzlebip;
+  if (!bird || bird.popped) return;
+  bird.popped = true;
+  bird.pop = 1;
+  bird.vy = -260;
+  bird.tumble = (Math.random() < .5 ? -1 : 1) * (200 + Math.random() * 180);
+  bird.element.disabled = true;
+  bird.element.style.pointerEvents = 'none';
+  catchMizzlebip();
+}
+
+function spawnMizzlebip() {
+  // One at a time, and not while the page is hidden or the flight sim owns
+  // the screen - just come back and try again later.
+  if (mizzlebip || !mizzlebipSky || document.hidden || document.body.classList.contains('flight-mode')) {
+    scheduleMizzlebip(12000);
+    return;
+  }
+
+  const element = document.createElement('button');
+  element.type = 'button';
+  element.className = 'mizzlebip';
+  element.setAttribute('aria-label', 'Catch Mizzlebip');
+  const art = document.createElement('img');
+  art.src = 'Imgs/Mizzlebip.png';
+  art.alt = '';
+  element.append(art);
+  element.addEventListener('click', popMizzlebip);
+  mizzlebipSky.append(element);
+
+  const headingLeft = Math.random() < .5;
+  const lane = 90 + Math.random() * Math.max(60, innerHeight * .45);
+  mizzlebip = {
+    element,
+    x: headingLeft ? innerWidth + 90 : -90,
+    y: lane,
+    lane,
+    vx: (headingLeft ? -1 : 1) * (105 + Math.random() * 70),
+    vy: mizzlebipFlap,
+    // The art faces one way; mirror it when it is travelling the other.
+    facing: headingLeft ? -1 : 1,
+    tilt: 0,
+    tumble: 0,
+    popped: false,
+    pop: 0
+  };
+
+  mizzlebipLast = performance.now();
+  mizzlebipFrame = requestAnimationFrame(flyMizzlebip);
+}
+
+if (mizzlebipSky) scheduleMizzlebip(9000 + Math.random() * 14000);
